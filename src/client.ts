@@ -87,6 +87,7 @@ export class SubscriptionClient {
   private inactivityTimeoutId: any;
   private closedByUser: boolean;
   private wsImpl: any;
+  private wasDataReceived :boolean;
   private wasKeepAliveReceived: boolean;
   private tryReconnectTimeoutId: any;
   private checkConnectionIntervalId: any;
@@ -513,11 +514,12 @@ export class SubscriptionClient {
   }
 
   private checkConnection() {
-    if (this.wasKeepAliveReceived) {
+    if (this.wasKeepAliveReceived || this.wasDataReceived) {
       this.wasKeepAliveReceived = false;
+      this.wasDataReceived = false;
       return;
     }
-
+  
     if (!this.reconnecting) {
       this.close(false, true);
     }
@@ -630,6 +632,7 @@ export class SubscriptionClient {
         const parsedPayload = !parsedMessage.payload.errors ?
           parsedMessage.payload : {...parsedMessage.payload, errors: this.formatErrors(parsedMessage.payload.errors)};
         this.operations[opId].handler(null, parsedPayload);
+        this.wasDataReceived = true;
         break;
 
       case MessageTypes.GQL_CONNECTION_KEEP_ALIVE:
