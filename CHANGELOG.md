@@ -9,9 +9,6 @@
 - Add support for `graphql` and `@types/graphql` 14.  <br/>
   [@caiquecastro](https://github.com/caiquecastro) in [#464](https://github.com/apollographql/subscriptions-transport-ws/pull/464)
 
-### v0.9.14
-- Allow dynamically specifying/overriding the schema in the object returned from `onOperation` [PR #447](https://github.com/apollographql/subscriptions-transport-ws/pull/447)
-
 ### v0.9.13
 - Allow connectionParams to be a Promise [PR #443](https://github.com/apollographql/subscriptions-transport-ws/pull/443)
 
