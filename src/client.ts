@@ -13,7 +13,7 @@ import { getOperationAST } from 'graphql/utilities/getOperationAST';
 import $$observable from 'symbol-observable';
 
 import { GRAPHQL_WS } from './protocol';
-import { WS_TIMEOUT } from './defaults';
+import { WS_MIN_TIMEOUT, WS_TIMEOUT } from './defaults';
 import MessageTypes from './message-types';
 
 export interface Observer<T> {
@@ -60,6 +60,7 @@ export type ConnectionParamsOptions = ConnectionParams | Function | Promise<Conn
 
 export interface ClientOptions {
   connectionParams?: ConnectionParamsOptions;
+  minimumTimeout?: number;
   timeout?: number;
   reconnect?: boolean;
   reconnectionAttempts?: number;
@@ -74,7 +75,8 @@ export class SubscriptionClient {
   private url: string;
   private nextOperationId: number;
   private connectionParams: Function;
-  private wsTimeout: number;
+  private wsMinimumTimeout: number;
+  private wsMaximumTimeout: number;
   private unsentMessagesQueue: Array<any>; // queued messages while websocket is opening.
   private reconnect: boolean;
   private reconnecting: boolean;
@@ -104,6 +106,7 @@ export class SubscriptionClient {
     const {
       connectionCallback = undefined,
       connectionParams = {},
+      minimumTimeout = WS_MIN_TIMEOUT,
       timeout = WS_TIMEOUT,
       reconnect = false,
       reconnectionAttempts = Infinity,
@@ -121,7 +124,8 @@ export class SubscriptionClient {
     this.url = url;
     this.operations = {};
     this.nextOperationId = 0;
-    this.wsTimeout = timeout;
+    this.wsMinimumTimeout = minimumTimeout;
+    this.wsMaximumTimeout = timeout;
     this.unsentMessagesQueue = [];
     this.reconnect = reconnect;
     this.reconnecting = false;
@@ -349,8 +353,8 @@ export class SubscriptionClient {
   }
 
   private createMaxConnectTimeGenerator() {
-    const minValue = 1000;
-    const maxValue = this.wsTimeout;
+    const minValue = this.wsMinimumTimeout;
+    const maxValue = this.wsMaximumTimeout;
 
     return new Backoff({
       min: minValue,
@@ -650,7 +654,7 @@ export class SubscriptionClient {
           clearInterval(this.checkConnectionIntervalId);
           this.checkConnection();
         }
-        this.checkConnectionIntervalId = setInterval(this.checkConnection.bind(this), this.wsTimeout);
+        this.checkConnectionIntervalId = setInterval(this.checkConnection.bind(this), this.wsMaximumTimeout);
         break;
 
       default:

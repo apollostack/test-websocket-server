@@ -1,5 +1,8 @@
 # Changelog
 
+### vNEXT
+- Allow passing of a minimum connection timeout for connect/reconnect
+
 ### v0.9.16
 - Add ability to set custom WebSocket protocols for client. <br/>
   [@pkosiec](https://github.com/pkosiec) in [#477](https://github.com/apollographql/subscriptions-transport-ws/pull/477)
