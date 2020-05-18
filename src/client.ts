@@ -461,9 +461,13 @@ export class SubscriptionClient {
   }
 
   // send message, or queue it if connection is not open
-  private sendMessageRaw(message: Object) {
+  private sendMessageRaw(message: any) {
     switch (this.status) {
       case this.wsImpl.OPEN:
+        if(message.type === MessageTypes.GQL_STOP) {
+          this.eventEmitter.emit('error', new Error(`Client is closing. Preventing message to be sent: ${message.type}`));
+          break;
+        }
         let serializedMessage: string = JSON.stringify(message);
         try {
           JSON.parse(serializedMessage);
