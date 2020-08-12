@@ -40,6 +40,8 @@ export type FormatedError = Error & {
 };
 
 export interface Operation {
+  processed: boolean;
+  started: boolean;
   options: OperationOptions;
   handler: (error: Error[], result?: any) => void;
 }
@@ -77,7 +79,7 @@ export class SubscriptionClient {
   private connectionParams: Function;
   private minWsTimeout: number;
   private wsTimeout: number;
-  private unsentMessagesQueue: Array<any>; // queued messages while websocket is opening.
+  private ready: boolean;
   private reconnect: boolean;
   private reconnecting: boolean;
   private reconnectionAttempts: number;
@@ -126,7 +128,7 @@ export class SubscriptionClient {
     this.nextOperationId = 0;
     this.minWsTimeout = minTimeout;
     this.wsTimeout = timeout;
-    this.unsentMessagesQueue = [];
+    this.ready = false;
     this.reconnect = reconnect;
     this.reconnecting = false;
     this.reconnectionAttempts = reconnectionAttempts;
@@ -154,6 +156,7 @@ export class SubscriptionClient {
   }
 
   public close(isForced = true, closedByUser = true) {
+    this.ready = false;
     this.clearInactivityTimeout();
     if (this.client !== null) {
       this.closedByUser = closedByUser;
@@ -178,6 +181,11 @@ export class SubscriptionClient {
         this.tryReconnect();
       }
     }
+    Object.keys(this.operations).forEach(opId => {
+      const operation = this.operations[opId];
+      const { processed, options, handler } = operation;
+      this.operations[opId] = { processed, started: false, options, handler };
+    });
   }
 
   public request(request: OperationOptions): Observable<ExecutionResult> {
@@ -322,14 +330,14 @@ export class SubscriptionClient {
     }
 
     const opId = this.generateOperationId();
-    this.operations[opId] = { options: options, handler };
+    this.operations[opId] = { processed: false, started: false, options: options, handler };
 
     this.applyMiddlewares(options)
       .then(processedOptions => {
         this.checkOperationOptions(processedOptions, handler);
         if (this.operations[opId]) {
-          this.operations[opId] = { options: processedOptions, handler };
-          this.sendMessage(opId, MessageTypes.GQL_START, processedOptions);
+          this.operations[opId] = { processed: true, started: false, options: processedOptions, handler };
+          this.startOperation(opId);
         }
       })
       .catch(error => {
@@ -338,6 +346,14 @@ export class SubscriptionClient {
       });
 
     return opId;
+  }
+
+  private startOperation(opId: string) {
+    const { processed, started, options, handler } = this.operations[opId];
+    if (this.ready && processed && !started) {
+      this.operations[opId] = { processed, started: true, options, handler };
+      this.sendMessage(opId, MessageTypes.GQL_START, options);
+    }
   }
 
   private getObserver<T>(
@@ -468,28 +484,19 @@ export class SubscriptionClient {
     this.sendMessageRaw(this.buildMessage(id, type, payload));
   }
 
-  // send message, or queue it if connection is not open
   private sendMessageRaw(message: Object) {
-    switch (this.status) {
-      case this.wsImpl.OPEN:
-        let serializedMessage: string = JSON.stringify(message);
-        try {
-          JSON.parse(serializedMessage);
-        } catch (e) {
-          this.eventEmitter.emit('error', new Error(`Message must be JSON-serializable. Got: ${message}`));
-        }
+    if (this.status === this.wsImpl.OPEN) {
+      let serializedMessage: string = JSON.stringify(message);
+      try {
+        JSON.parse(serializedMessage);
+      } catch (e) {
+        this.eventEmitter.emit('error', new Error(`Message must be JSON-serializable. Got: ${message}`));
+      }
 
-        this.client.send(serializedMessage);
-        break;
-      case this.wsImpl.CONNECTING:
-        this.unsentMessagesQueue.push(message);
-
-        break;
-      default:
-        if (!this.reconnecting) {
-          this.eventEmitter.emit('error', new Error('A message was not sent because socket is not connected, is closing or ' +
-            'is already closed. Message was: ' + JSON.stringify(message)));
-        }
+      this.client.send(serializedMessage);
+    } else if (!this.reconnecting) {
+      this.eventEmitter.emit('error', new Error('A message was not sent because socket is not connected, is closing or ' +
+        'is already closed. Message was: ' + JSON.stringify(message)));
     }
   }
 
@@ -502,28 +509,13 @@ export class SubscriptionClient {
       return;
     }
 
-    if (!this.reconnecting) {
-      Object.keys(this.operations).forEach((key) => {
-        this.unsentMessagesQueue.push(
-          this.buildMessage(key, MessageTypes.GQL_START, this.operations[key].options),
-        );
-      });
-      this.reconnecting = true;
-    }
-
+    this.reconnecting = true;
     this.clearTryReconnectTimeout();
 
     const delay = this.backoff.duration();
     this.tryReconnectTimeoutId = setTimeout(() => {
       this.connect();
     }, delay);
-  }
-
-  private flushUnsentMessagesQueue() {
-    this.unsentMessagesQueue.forEach((message) => {
-      this.sendMessageRaw(message);
-    });
-    this.unsentMessagesQueue = [];
   }
 
   private checkConnection() {
@@ -565,10 +557,9 @@ export class SubscriptionClient {
 
           // Send CONNECTION_INIT message, no need to wait for connection to success (reduce roundtrips)
           this.sendMessage(undefined, MessageTypes.GQL_CONNECTION_INIT, connectionParams);
-          this.flushUnsentMessagesQueue();
         } catch (error) {
+          // XXX Client should never send this message to server. Instead, should emit error and close.
           this.sendMessage(undefined, MessageTypes.GQL_CONNECTION_ERROR, error);
-          this.flushUnsentMessagesQueue();
         }
       }
     };
@@ -621,10 +612,14 @@ export class SubscriptionClient {
 
       case MessageTypes.GQL_CONNECTION_ACK:
         this.eventEmitter.emit(this.reconnecting ? 'reconnected' : 'connected');
+        this.ready = true;
         this.reconnecting = false;
         this.backoff.reset();
         this.maxConnectTimeGenerator.reset();
 
+        Object.keys(this.operations).forEach(key => {
+          this.startOperation(key);
+        });
         if (this.connectionCallback) {
           this.connectionCallback();
         }
