@@ -70,6 +70,10 @@ export interface ClientOptions {
   wsOptionArguments?: any[];
 }
 
+export interface TryReconnectOptions {
+  when?: number;
+}
+
 export class SubscriptionClient {
   public client: any;
   public operations: Operations;
@@ -176,10 +180,13 @@ export class SubscriptionClient {
       this.client.onerror = null;
       this.client.onmessage = null;
       this.client = null;
-      this.eventEmitter.emit('disconnected');
 
-      if (!isForced) {
-        this.tryReconnect();
+      if (!isForced && this.reconnect && this.backoff.attempts < this.reconnectionAttempts) {
+        const willTryReconnectAt = new Date().getTime() + this.backoff.duration();
+        this.eventEmitter.emit('disconnected', {willTryReconnectAt});
+        this.tryReconnect({when: willTryReconnectAt});
+      } else {
+        this.eventEmitter.emit('disconnected', {willTryReconnectAt: null});
       }
     }
   }
@@ -304,6 +311,30 @@ export class SubscriptionClient {
     });
 
     return this;
+  }
+
+  public tryReconnect(options: TryReconnectOptions = {}) {
+    if (this.status === this.wsImpl.OPEN) {
+      return;
+    }
+    if (!this.reconnecting) {
+      Object.keys(this.operations).forEach((key) => {
+        this.unsentMessagesQueue.push(
+          this.buildMessage(key, MessageTypes.GQL_START, this.operations[key].options),
+        );
+      });
+      this.reconnecting = true;
+    }
+
+    this.clearTryReconnectTimeout();
+
+    const delay = options.when != null
+      ? Math.max(0, options.when - new Date().getTime())
+      : 0;
+
+    this.tryReconnectTimeoutId = setTimeout(() => {
+      this.connect();
+    }, delay);
   }
 
   private getConnectionParams(connectionParams: ConnectionParamsOptions): Function {
@@ -501,27 +532,6 @@ export class SubscriptionClient {
     return String(++this.nextOperationId);
   }
 
-  private tryReconnect() {
-    if (!this.reconnect || this.backoff.attempts >= this.reconnectionAttempts) {
-      return;
-    }
-
-    if (!this.reconnecting) {
-      Object.keys(this.operations).forEach((key) => {
-        this.unsentMessagesQueue.push(
-          this.buildMessage(key, MessageTypes.GQL_START, this.operations[key].options),
-        );
-      });
-      this.reconnecting = true;
-    }
-
-    this.clearTryReconnectTimeout();
-
-    const delay = this.backoff.duration();
-    this.tryReconnectTimeoutId = setTimeout(() => {
-      this.connect();
-    }, delay);
-  }
 
   private flushUnsentMessagesQueue() {
     this.unsentMessagesQueue.forEach((message) => {
