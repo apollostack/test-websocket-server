@@ -409,6 +409,11 @@ export class SubscriptionServer {
 
               return executionIterable;
             }).then((subscription: ExecutionIterator) => {
+              if (connectionContext.operations[opId] == null) {
+                // subscription already unsubscribed
+                subscription.return()
+                throw new Error('subscription already unsubscribed!')
+              }
               connectionContext.operations[opId] = subscription;
             }).then(() => {
               // NOTE: This is a temporary code to support the legacy protocol.
