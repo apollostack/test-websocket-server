@@ -64,7 +64,7 @@ export interface ClientOptions {
   timeout?: number;
   reconnect?: boolean;
   reconnectionAttempts?: number;
-  connectionCallback?: (error: Error[], result?: any) => void;
+  connectionCallback?: (error?: Error) => void;
   lazy?: boolean;
   inactivityTimeout?: number;
   wsOptionArguments?: any[];
@@ -83,7 +83,7 @@ export class SubscriptionClient {
   private reconnecting: boolean;
   private reconnectionAttempts: number;
   private backoff: any;
-  private connectionCallback: any;
+  private connectionCallback: (error?: Error) => void;
   private eventEmitter: EventEmitterType;
   private lazy: boolean;
   private inactivityTimeout: number;
