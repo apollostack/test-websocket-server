@@ -244,6 +244,7 @@ ReactDOM.render(
   * `minTimeout?: number`: the minimum amount of time the client should wait for a connection to be made (default 1000 ms)
   * `lazy?: boolean` : use to set lazy mode - connects only when first subscription created, and delay the socket initialization
   * `connectionParams?: Object | Function | Promise<Object>` : object that will be available as first argument of `onConnect` (in server side), if passed a function - it will call it and send the return value, if function returns as promise - it will wait until it resolves and send the resolved value.
+    - `headers?: Object` : any additional headers you may want to pass.
   * `reconnect?: boolean` : automatic reconnect in case of connection error
   * `reconnectionAttempts?: number` : how much reconnect attempts
   * `connectionCallback?: (error) => {}` : optional, callback that called after the first init message, with the error (if there is one)
